@@ -11,11 +11,11 @@ pnpm install
 # 2. Set up Supabase
 #    - Create a project at https://supabase.com
 #    - Run supabase/migrations/001_initial_schema.sql in the SQL editor
-#    - Copy the project URL and service role key from Settings > API
+#    - Copy the project URL and secret key from Settings > API Keys
 
 # 3. Configure environment
 cp .env.example .env
-# Fill in SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and other API keys
+# Fill in SUPABASE_URL, SUPABASE_SECRET_KEY, and other API keys
 
 # 4. Run the dev server
 pnpm dev
