@@ -3,35 +3,23 @@
  */
 
 import { NextResponse } from "next/server";
-// import { PrismaClient } from "@prisma/client";
-
-// const prisma = new PrismaClient();
+import { createSupabaseClient } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    // const companies = await prisma.company.findMany({
-    //   include: {
-    //     signals: {
-    //       orderBy: { createdAt: "desc" },
-    //       take: 5,
-    //     },
-    //     contacts: {
-    //       orderBy: { createdAt: "desc" },
-    //       take: 10,
-    //     },
-    //     revenueRecords: {
-    //       orderBy: { year: "desc" },
-    //       take: 5,
-    //     },
-    //   },
-    //   orderBy: { name: "asc" },
-    // });
+    const supabase = createSupabaseClient();
 
-    // return NextResponse.json(companies);
+    const { data, error } = await supabase
+      .from("companies")
+      .select("*, signals(*), contacts(*), revenue_records(*)")
+      .order("name");
 
-    return NextResponse.json({
-      message: "Connect database and uncomment Prisma queries to activate",
-    });
+    if (error) {
+      console.error("Supabase query error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Failed to fetch companies:", error);
     return NextResponse.json(

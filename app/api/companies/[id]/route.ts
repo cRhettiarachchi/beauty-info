@@ -3,9 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-// import { PrismaClient } from "@prisma/client";
-
-// const prisma = new PrismaClient();
+import { createSupabaseClient } from "@/lib/supabase";
 
 export async function GET(
   _req: NextRequest,
@@ -14,24 +12,26 @@ export async function GET(
   const { id } = await params;
 
   try {
-    // const company = await prisma.company.findUnique({
-    //   where: { id },
-    //   include: {
-    //     signals: { orderBy: { createdAt: "desc" } },
-    //     contacts: { orderBy: { createdAt: "desc" } },
-    //     revenueRecords: { orderBy: { year: "desc" } },
-    //   },
-    // });
+    const supabase = createSupabaseClient();
 
-    // if (!company) {
-    //   return NextResponse.json({ error: "Company not found" }, { status: 404 });
-    // }
+    const { data, error } = await supabase
+      .from("companies")
+      .select("*, signals(*), contacts(*), revenue_records(*)")
+      .eq("id", id)
+      .single();
 
-    // return NextResponse.json(company);
+    if (error) {
+      if (error.code === "PGRST116") {
+        return NextResponse.json(
+          { error: "Company not found" },
+          { status: 404 }
+        );
+      }
+      console.error("Supabase query error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-    return NextResponse.json({
-      message: `Company ${id}: connect database and uncomment Prisma queries to activate`,
-    });
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Failed to fetch company:", error);
     return NextResponse.json(

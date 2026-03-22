@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-// import { tasks } from "@trigger.dev/sdk/v3";
+import { tasks } from "@trigger.dev/sdk/v3";
 
 export async function GET(req: NextRequest) {
   // Verify cron secret
@@ -18,13 +18,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Trigger the refresh pipeline job
-    // const handle = await tasks.trigger("refresh-pipeline", {});
+    const handle = await tasks.trigger("refresh-pipeline", {});
 
     return NextResponse.json({
       success: true,
       message: "Refresh pipeline triggered",
-      // runId: handle.id,
+      runId: handle.id,
     });
   } catch (error) {
     console.error("Failed to trigger refresh pipeline:", error);

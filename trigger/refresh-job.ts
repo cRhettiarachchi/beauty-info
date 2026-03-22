@@ -9,39 +9,44 @@
  *  5. Fetch revenue data from SEC EDGAR (US) or Exa + GPT-4o (non-US) (Task C)
  *  6. Validate all source URLs before DB writes
  *  7. Upsert everything into the database
- *
- * This file is a scaffold — implement each step against your Trigger.dev project.
  */
 
-// import { task } from "@trigger.dev/sdk/v3";
-// import { PrismaClient } from "@prisma/client";
-// import { searchSignals, searchContacts, searchFinancials } from "@/lib/exa";
-// import { scrapeLinkedInProfile } from "@/lib/brightdata";
-// import { getAnnualRevenue } from "@/lib/edgar";
-// import { extractSignal, extractContacts, extractRevenue } from "@/lib/extract";
-// import { isUrlAlive } from "@/lib/validate";
-// import { seedCompanies } from "@/seeds/companies";
+import { task } from "@trigger.dev/sdk/v3";
+import { createSupabaseClient } from "@/lib/supabase";
+import { searchSignals, searchContacts, searchFinancials } from "@/lib/exa";
+import { scrapeLinkedInProfile } from "@/lib/brightdata";
+import { getAnnualRevenue } from "@/lib/edgar";
+import { extractSignal, extractContacts, extractRevenue } from "@/lib/extract";
+import { isUrlAlive } from "@/lib/validate";
+import { seedCompanies } from "@/seeds/companies";
 
-// const prisma = new PrismaClient();
-
-/*
 export const refreshPipeline = task({
   id: "refresh-pipeline",
   run: async () => {
+    const supabase = createSupabaseClient();
+
     for (const seed of seedCompanies) {
       // 1. Ensure company exists in DB
-      const company = await prisma.company.upsert({
-        where: { name: seed.name },
-        update: {},
-        create: {
-          name: seed.name,
-          ticker: seed.ticker,
-          secCik: seed.secCik,
-          website: seed.website,
-          linkedinUrl: seed.linkedinUrl,
-          irPageUrl: seed.irPageUrl,
-        },
-      });
+      const { data: company, error: upsertError } = await supabase
+        .from("companies")
+        .upsert(
+          {
+            name: seed.name,
+            ticker: seed.ticker,
+            sec_cik: seed.secCik,
+            website: seed.website,
+            linkedin_url: seed.linkedinUrl,
+            ir_page_url: seed.irPageUrl,
+          },
+          { onConflict: "name" }
+        )
+        .select()
+        .single();
+
+      if (upsertError || !company) {
+        console.error(`Failed to upsert company ${seed.name}:`, upsertError);
+        continue;
+      }
 
       // 2. AI Signals
       try {
@@ -52,22 +57,20 @@ export const refreshPipeline = task({
 
           const urlValid = await isUrlAlive(result.url);
           if (!urlValid) {
-            await prisma.failedUrl.create({
-              data: { url: result.url, reason: "HEAD check failed", context: "signal" },
-            });
+            await supabase
+              .from("failed_urls")
+              .insert({ url: result.url, reason: "HEAD check failed", context: "signal" });
             continue;
           }
 
-          await prisma.signal.create({
-            data: {
-              companyId: company.id,
-              signalType: extracted.signal_type,
-              summary: extracted.summary,
-              aiRelevanceScore: extracted.ai_relevance_score,
-              lowRelevance: extracted.low_relevance ?? false,
-              publishedDate: extracted.published_date ? new Date(extracted.published_date) : null,
-              sourceUrl: extracted.source_url,
-            },
+          await supabase.from("signals").insert({
+            company_id: company.id,
+            signal_type: extracted.signal_type,
+            summary: extracted.summary,
+            ai_relevance_score: extracted.ai_relevance_score,
+            low_relevance: extracted.low_relevance ?? false,
+            published_date: extracted.published_date,
+            source_url: extracted.source_url,
           });
         }
       } catch (err) {
@@ -95,22 +98,20 @@ export const refreshPipeline = task({
           for (const contact of contacts) {
             const urlValid = await isUrlAlive(result.url);
             if (!urlValid) {
-              await prisma.failedUrl.create({
-                data: { url: result.url, reason: "HEAD check failed", context: "contact" },
-              });
+              await supabase
+                .from("failed_urls")
+                .insert({ url: result.url, reason: "HEAD check failed", context: "contact" });
               continue;
             }
 
-            await prisma.contact.create({
-              data: {
-                companyId: company.id,
-                name: contact.name,
-                title: contact.title,
-                region: contact.region,
-                linkedinUrl: contact.linkedin_url,
-                email: contact.email,
-                sourceUrl: contact.source_url,
-              },
+            await supabase.from("contacts").insert({
+              company_id: company.id,
+              name: contact.name,
+              title: contact.title,
+              region: contact.region,
+              linkedin_url: contact.linkedin_url,
+              email: contact.email,
+              source_url: contact.source_url,
             });
           }
         }
@@ -126,15 +127,13 @@ export const refreshPipeline = task({
           const sourceUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${seed.secCik.padStart(10, "0")}.json`;
 
           for (const rec of records) {
-            await prisma.revenueRecord.create({
-              data: {
-                companyId: company.id,
-                year: rec.year,
-                revenue: rec.revenue,
-                currency: "USD",
-                segment: "Total",
-                sourceUrl,
-              },
+            await supabase.from("revenue_records").insert({
+              company_id: company.id,
+              year: rec.year,
+              revenue: rec.revenue,
+              currency: "USD",
+              segment: "Total",
+              source_url: sourceUrl,
             });
           }
         } else {
@@ -146,23 +145,21 @@ export const refreshPipeline = task({
 
             const urlValid = await isUrlAlive(result.url);
             if (!urlValid) {
-              await prisma.failedUrl.create({
-                data: { url: result.url, reason: "HEAD check failed", context: "revenue" },
-              });
+              await supabase
+                .from("failed_urls")
+                .insert({ url: result.url, reason: "HEAD check failed", context: "revenue" });
               continue;
             }
 
             for (const rec of extracted.records) {
-              await prisma.revenueRecord.create({
-                data: {
-                  companyId: company.id,
-                  year: rec.year,
-                  revenue: rec.revenue,
-                  currency: rec.currency,
-                  revenueGrowthPct: rec.revenue_growth_pct,
-                  segment: rec.segment,
-                  sourceUrl: extracted.source_url,
-                },
+              await supabase.from("revenue_records").insert({
+                company_id: company.id,
+                year: rec.year,
+                revenue: rec.revenue,
+                currency: rec.currency,
+                revenue_growth_pct: rec.revenue_growth_pct,
+                segment: rec.segment,
+                source_url: extracted.source_url,
               });
             }
           }
@@ -175,4 +172,3 @@ export const refreshPipeline = task({
     return { success: true, companiesProcessed: seedCompanies.length };
   },
 });
-*/
